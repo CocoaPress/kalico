@@ -3,10 +3,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ...configfile import ConfigWrapper
+    from ...configfile import ConfigWrapper, PrinterConfig
     from ...gcode import GCodeCommand, GCodeDispatch
     from ...printer import Printer
     from ..gcode_move import GCodeMove
+    from ..probe import PrinterProbe
     from ..save_variables import SaveVariables
     from .toolhead import CocoaToolheadControl
 
@@ -28,6 +29,7 @@ class CocoaNozzleOffsets:
         self.logger = cocoa_toolhead.logger.getChild("offsets")
 
         self.printer = config.get_printer()
+        self.config = config
 
         self.gcode = self.printer.lookup_object("gcode")
         self.gcode_move = self.printer.lookup_object("gcode_move")
@@ -51,6 +53,21 @@ class CocoaNozzleOffsets:
         self.printer.register_event_handler(
             f"cocoa_memory:{self.name}:ready", self._memory_ready
         )
+
+        self.printer.register_event_handler(
+            "klippy:ready", self._on_ready_PROBE_OFFSET_HACK
+        )
+
+    def _on_ready_PROBE_OFFSET_HACK(self):
+        pconfig: PrinterConfig = self.printer.lookup_object("configfile")
+        probe: PrinterProbe = self.printer.lookup_object("probe")
+        probe_config = self.config.getsection("probe")
+
+        if (z_offset := probe_config.getfloat("z_offset")) != 0.0:
+            self.save_variables.save(f"{self._prefix}generic", z_offset)
+            probe.mcu_probe.position_endstop = 0.0
+            pconfig.set("probe", "z_offset", "0.0")
+            self.gcode.run_script_from_command("SAVE_CONFIG RELOAD=0")
 
     def _memory_ready(self, connected: bool, config: dict):
         self._current_tool = (
