@@ -30,6 +30,7 @@ FILEHEADER = """
 #include "command.h"
 #include "compiler.h"
 #include "initial_pins.h"
+#include "usb_identity.h"
 """
 
 
@@ -241,6 +242,60 @@ const int initial_pins_size PROGMEM = ARRAY_SIZE(initial_pins);
 
 
 Handlers.append(HandleInitialPins())
+
+
+######################################################################
+# Serial Identity Pin
+######################################################################
+
+
+class HandleSerialIdentityPin:
+    def __init__(self):
+        self.identity_pin = None
+        self.ctr_dispatch = {
+            "DECL_USB_SERIAL_IDENTITY_PIN": self.decl_identity_pin
+        }
+
+    def decl_identity_pin(self, req):
+        pin = req.split(maxsplit=1)[1].strip()
+        if pin.startswith('"') and pin.endswith('"'):
+            pin = pin[1:-1]
+        if pin:
+            self.identity_pin = pin
+            HandlerConstants.decl_constant_str(
+                "_DECL_CONSTANT_STR USB_SERIAL_NUMBER_IDENTIFY_PIN "
+                + self.identity_pin
+            )
+
+    def _map_pin(self):
+        if not self.identity_pin:
+            return "{ 0 };"
+        mp = msgproto.MessageParser()
+        mp.fill_enumerations(HandlerEnumerations.enumerations)
+        pinmap = mp.get_enumerations().get("pin", {})
+        pin = self.identity_pin
+        invert = "1"
+        pullup = "0"
+        while pin[0] in ("!", "^"):
+            if pin.startswith("!"):
+                invert = "0"
+            if pin.startswith("^"):
+                pullup = "1"
+            pin = pin[1:]
+        return "{%d, %s, %s}; // %s" % (pinmap[pin], invert, pullup, pin)
+
+    def update_data_dictionary(self, data):
+        pass
+
+    def generate_code(self, options):
+        out = self._map_pin()
+        fmt = """
+const struct usb_identity_pin_s usb_identity_pin PROGMEM = %s
+"""
+        return fmt % (out,)
+
+
+Handlers.append(HandleSerialIdentityPin())
 
 
 ######################################################################
