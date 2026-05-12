@@ -74,6 +74,9 @@ config USB_DEVICE_ID
 config USB_SERIAL_NUMBER_CHIPID
     depends on USB && HAVE_CHIPID
     default y
+config USB_SERIAL_NUMBER_IDENTIFY
+    depends on USB
+    default n
 config USB_SERIAL_NUMBER
     default "12345"
 config USB_MANUFACTURER
@@ -87,8 +90,21 @@ config USB_DEVICE_ID
     hex "USB device ID" if USBSERIAL
 config USB_SERIAL_NUMBER_CHIPID
     bool "USB serial number from CHIPID" if HAVE_CHIPID
+config USB_SERIAL_NUMBER_IDENTIFY
+    bool "USB serial number based on gpio" if !USB_SERIAL_NUMBER_CHIPID
+config USB_SERIAL_NUMBER_IDENTIFY_PIN
+    depends on USB_SERIAL_NUMBER_IDENTIFY
+    string "USB serial identity gpio pin" if USB_SERIAL_NUMBER_IDENTIFY
+config USB_SERIAL_NUMBER_IDENTIFY_PRIMARY
+    depends on USB_SERIAL_NUMBER_IDENTIFY
+    string "USB primary serial number" if USB_SERIAL_NUMBER_IDENTIFY
+    default "primary"
+config USB_SERIAL_NUMBER_IDENTIFY_SECONDARY
+    depends on USB_SERIAL_NUMBER_IDENTIFY
+    string "USB secondary serial number" if USB_SERIAL_NUMBER_IDENTIFY
+    default "secondary"
 config USB_SERIAL_NUMBER
-    string "USB serial number" if !USB_SERIAL_NUMBER_CHIPID
+    string "USB serial number" if !(USB_SERIAL_NUMBER_CHIPID || USB_SERIAL_NUMBER_IDENTIFY)
 config USB_MANUFACTURER
     string "USB manufacturer"
 endmenu

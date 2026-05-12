@@ -16,6 +16,7 @@ void usb_set_configure(void);
 struct usb_string_descriptor *usbserial_get_serialid(void);
 
 // usb_cdc.c
+void usb_fill_string(struct usb_string_descriptor *desc, int strlen, typeof(u"") str);
 void usb_fill_serial(struct usb_string_descriptor *desc, int strlen, void *id);
 void usb_notify_bulk_in(void);
 void usb_notify_bulk_out(void);

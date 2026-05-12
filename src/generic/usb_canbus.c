@@ -522,7 +522,7 @@ static const struct descriptor_s {
       &cdc_string_manufacturer, SIZE_cdc_string_manufacturer },
     { (USB_DT_STRING<<8) | USB_STR_ID_PRODUCT, USB_LANGID_ENGLISH_US,
       &cdc_string_product, SIZE_cdc_string_product },
-#if !CONFIG_USB_SERIAL_NUMBER_CHIPID
+#if !(CONFIG_USB_SERIAL_NUMBER_CHIPID || CONFIG_USB_SERIAL_NUMBER_IDENTIFY)
     { (USB_DT_STRING<<8) | USB_STR_ID_SERIAL, USB_LANGID_ENGLISH_US,
       &cdc_string_serial, SIZE_cdc_string_serial },
 #endif
@@ -636,6 +636,15 @@ usb_req_get_descriptor(struct usb_ctrlrequest *req)
             flags = UX_SEND;
             size = usbserial_serialid->bLength;
             desc = (void*)usbserial_serialid;
+    }
+    if (CONFIG_USB_SERIAL_NUMBER_IDENTIFY
+        && req->wValue == ((USB_DT_STRING<<8) | USB_STR_ID_SERIAL)
+        && req->wIndex == USB_LANGID_ENGLISH_US) {
+            struct usb_string_descriptor *usbserial_identity;
+            usbserial_identity = usbserial_get_identity();
+            flags = UX_SEND;
+            size = usbserial_identity->bLength;
+            desc = (void*)usbserial_identity;
     }
     if (desc) {
         if (size > req->wLength)
