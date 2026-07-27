@@ -177,12 +177,14 @@ class CocoaPreheater:
             reactor.unregister_timer(self._timer)
             self._timer = None
 
-        self.gcode.register_mux_command(
-            "PREHEATER_STOP", "TOOL", self.mux_name, None
-        )
-        self.gcode.register_mux_command(
-            "PREHEATER_WAIT", "TOOL", self.mux_name, None
-        )
+        if "PREHEATER_STOP" in self.gcode.ready_gcode_handlers:
+            self.gcode.register_mux_command(
+                "PREHEATER_STOP", "TOOL", self.mux_name, None
+            )
+        if "PREHEATER_WAIT" in self.gcode.ready_gcode_handlers:
+            self.gcode.register_mux_command(
+                "PREHEATER_WAIT", "TOOL", self.mux_name, None
+            )
 
         if reason == "cancel":
             self.gcode.run_script_from_command(
@@ -191,9 +193,10 @@ class CocoaPreheater:
             self.gcode.run_script_from_command(
                 f'SET_HEATER_TEMPERATURE HEATER="{self.cocoa_toolhead.extruder_name.split()[-1]}" TARGET=0'
             )
-            self.gcode.register_mux_command(
-                "PREHEATER_CANCEL", "TOOL", self.mux_name, None
-            )
+            if "PREHEATER_CANCEL" in self.gcode.ready_gcode_handlers:
+                self.gcode.register_mux_command(
+                    "PREHEATER_CANCEL", "TOOL", self.mux_name, None
+                )
 
         self.printer.send_event(
             f"cocoa_preheater:{self.name}:stop", self.profile, reason
