@@ -88,7 +88,6 @@ class CocoaPreheater:
             "status": self.state,
             "profile": self.profile,
             "time_remaining": round(self.time_remaining, 1),
-            "profiles": self.profile_manager.get_status(eventtime),
         }
 
     def _on_attached(self):
@@ -181,6 +180,7 @@ class CocoaPreheater:
             self.gcode.register_mux_command(
                 "PREHEATER_STOP", "TOOL", self.mux_name, None
             )
+
         if "PREHEATER_WAIT" in self.gcode.ready_gcode_handlers:
             self.gcode.register_mux_command(
                 "PREHEATER_WAIT", "TOOL", self.mux_name, None

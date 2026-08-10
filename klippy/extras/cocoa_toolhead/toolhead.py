@@ -204,6 +204,7 @@ class CocoaToolheadControl:
             "runout": self.runout.get_status(eventtime),
             "memory": self.memory.get_status(eventtime),
             "offsets": self.nozzle_offsets.get_status(eventtime),
+            "preheater": self.preheater.get_status(eventtime),
         }
 
     # For updating user values (name of the toolhead)
