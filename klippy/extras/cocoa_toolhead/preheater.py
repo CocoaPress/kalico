@@ -154,7 +154,7 @@ class CocoaPreheater:
         self.gcode.register_mux_command(
             "PREHEATER_WAIT", "TOOL", self.mux_name, self.cmd_PREHEATER_WAIT
         )
-        if "PREHEATER_CANCEL" not in self.gcode.ready_gcode_handlers:
+        if not self._is_registered("PREHEATER_CANCEL"):
             self.gcode.register_mux_command(
                 "PREHEATER_CANCEL",
                 "TOOL",
@@ -176,12 +176,12 @@ class CocoaPreheater:
             reactor.unregister_timer(self._timer)
             self._timer = None
 
-        if "PREHEATER_STOP" in self.gcode.ready_gcode_handlers:
+        if self._is_registered("PREHEATER_STOP"):
             self.gcode.register_mux_command(
                 "PREHEATER_STOP", "TOOL", self.mux_name, None
             )
 
-        if "PREHEATER_WAIT" in self.gcode.ready_gcode_handlers:
+        if self._is_registered("PREHEATER_WAIT"):
             self.gcode.register_mux_command(
                 "PREHEATER_WAIT", "TOOL", self.mux_name, None
             )
@@ -193,7 +193,7 @@ class CocoaPreheater:
             self.gcode.run_script_from_command(
                 f'SET_HEATER_TEMPERATURE HEATER="{self.cocoa_toolhead.extruder_name.split()[-1]}" TARGET=0'
             )
-            if "PREHEATER_CANCEL" in self.gcode.ready_gcode_handlers:
+            if self._is_registered("PREHEATER_CANCEL"):
                 self.gcode.register_mux_command(
                     "PREHEATER_CANCEL", "TOOL", self.mux_name, None
                 )
@@ -204,6 +204,12 @@ class CocoaPreheater:
 
     def _is_preheating(self, eventtime) -> bool:
         return self._timer is not None and self.time_remaining > 0.0
+
+    def _is_registered(self, command: str) -> bool:
+        """Is this toolhead's mux handler registered for `command`?"""
+
+        _, values = self.gcode.mux_commands.get(command, (None, {}))
+        return self.mux_name in values
 
     def cmd_PREHEATER_START(self, gcmd):
         """Preheat a chocolate core. `PREHEATER_START NAME=`"""
