@@ -51,7 +51,7 @@ class CocoaNozzleOffsets:
             f"cocoa_toolhead:{self.name}:detached", self._on_detach
         )
         self.printer.register_event_handler(
-            f"cocoa_memory:{self.name}:ready", self._memory_ready
+            f"cocoa_toolhead:{self.name}:attached", self._on_attach
         )
 
         self.printer.register_event_handler(
@@ -69,12 +69,8 @@ class CocoaNozzleOffsets:
             pconfig.set("probe", "z_offset", "0.0")
             self.gcode.run_script_from_command("SAVE_CONFIG RELOAD=0")
 
-    def _memory_ready(self, connected: bool, config: dict):
-        self._current_tool = (
-            str(self.cocoa_toolhead.memory.header.uid)
-            if connected
-            else "generic"
-        )
+    def _on_attach(self):
+        self._current_tool = "generic"
         self._current_offset = self.save_variables.allVariables.get(
             f"{self._prefix}{self._current_tool}", 0.0
         )
