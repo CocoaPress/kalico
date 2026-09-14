@@ -76,7 +76,9 @@ class PreheatProfileManager:
 
     def get_status(self, eventtime):
         if self._profile_status_cache is None:
-            self._profile_status_cache = copy.deepcopy(self.profiles)
+            self._profile_status_cache = {
+                "profiles": copy.deepcopy(self.profiles)
+            }
         return self._profile_status_cache
 
     def get_profile(self, name: str) -> PreheatProfile:
