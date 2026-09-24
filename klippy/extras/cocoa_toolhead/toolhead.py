@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from ...kinematics.extruder import PrinterExtruder
     from ...mcu import MCU_adc
     from ...printer import Printer
+    from ...toolhead import ToolHead
     from ..adc_temperature import PrinterADCtoTemperature
     from ..gcode_macro import PrinterGCodeMacro
     from ..heaters import Heater
@@ -75,6 +76,10 @@ class CocoaToolheadControl:
         self.calibration_required = False
 
         self.printer.register_event_handler("klippy:connect", self._on_connect)
+        self.printer.register_event_handler(
+            "extruder:activate_extruder", self._extruder_activated
+        )
+
         self.printer.register_event_handler(
             f"cocoa_preheater:{self.name}:start", self._preheater_started
         )
@@ -178,22 +183,45 @@ class CocoaToolheadControl:
         heater.set_temp = set_temp
 
     def receive_sensor_value(self, heater, value: float):
+        toolhead: ToolHead = self.printer.lookup_object("toolhead")
+        extruder: PrinterExtruder = self.printer.lookup_object(
+            self.extruder_name
+        )
+
         self.last_readings[heater.name] = value
 
-        is_attached = value < OPEN_ADC_VALUE
-        if is_attached != self.attached:
-            self.attached = is_attached
+        self.trigger_attach_event(
+            toolhead.get_extruder() is extruder and value < OPEN_ADC_VALUE
+        )
 
-            self.gcode.respond_info(
-                f"Cocoa Press: Toolhead {'attached' if is_attached else 'detached'}"
-            )
+    def _extruder_activated(self):
+        toolhead: ToolHead = self.printer.lookup_object("toolhead")
+        extruder: PrinterExtruder = self.printer.lookup_object(
+            self.extruder_name
+        )
 
-            if is_attached:
-                self.printer.send_event(f"cocoa_toolhead:{self.name}:attached")
-                self.attach_tmpl()
-            else:
-                self.printer.send_event(f"cocoa_toolhead:{self.name}:detached")
-                self.detach_tmpl()
+        print(
+            f"cocoa_toolhead:{self.mux_name} extruder activated {toolhead.get_extruder().get_name()}"
+        )
+
+        self.trigger_attach_event(toolhead.get_extruder() is extruder)
+
+    def trigger_attach_event(self, is_attached: bool):
+        if is_attached == self.attached:
+            return
+
+        self.attached = is_attached
+
+        self.gcode.respond_info(
+            f"Cocoa Press: Toolhead {self.name} {'attached' if is_attached else 'detached'}"
+        )
+
+        if is_attached:
+            self.printer.send_event(f"cocoa_toolhead:{self.name}:attached")
+            self.attach_tmpl()
+        else:
+            self.printer.send_event(f"cocoa_toolhead:{self.name}:detached")
+            self.detach_tmpl()
 
     def get_status(self, eventtime):
         return {
