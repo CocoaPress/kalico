@@ -35,9 +35,7 @@ class CocoaNozzleOffsets:
         self.gcode_move = self.printer.lookup_object("gcode_move")
         self.save_variables = self.printer.load_object(config, "save_variables")
 
-        self._prefix = (
-            f"z_offset_{self.mux_name}_" if self.mux_name else "z_offset_"
-        )
+        self._variable_name = f"z_offset_{self.name}"
         self._current_tool = None
         self._current_offset = 0.0
 
@@ -54,9 +52,10 @@ class CocoaNozzleOffsets:
             f"cocoa_toolhead:{self.name}:attached", self._on_attach
         )
 
-        self.printer.register_event_handler(
-            "klippy:ready", self._on_ready_PROBE_OFFSET_HACK
-        )
+        if self.mux_name is None:
+            self.printer.register_event_handler(
+                "klippy:ready", self._on_ready_PROBE_OFFSET_HACK
+            )
 
     def _on_ready_PROBE_OFFSET_HACK(self):
         pconfig: PrinterConfig = self.printer.lookup_object("configfile")
@@ -65,15 +64,19 @@ class CocoaNozzleOffsets:
 
         if (z_offset := probe_config.getfloat("z_offset")) != 0.0:
             # A probe z_offset of N is equivalent to a gcode z offset of -N
-            self.save_variables.save(f"{self._prefix}generic", -z_offset)
+            self.save_variables.save(self._variable_name, -z_offset)
             probe.mcu_probe.position_endstop = 0.0
             pconfig.set("probe", "z_offset", "0.0")
             self.gcode.run_script_from_command("SAVE_CONFIG RELOAD=0")
 
+        elif z_offset := self.save_variables.allVariables.pop(
+            "z_offset_generic", None
+        ):
+            self.save_variables.save(self._variable_name, z_offset)
+
     def _on_attach(self):
-        self._current_tool = "generic"
         self._current_offset = self.save_variables.allVariables.get(
-            f"{self._prefix}{self._current_tool}", 0.0
+            self._variable_name, 0.0
         )
         self.gcode.run_script_from_command(
             f"SET_GCODE_OFFSET Z_ADJUST={self._current_offset}"
@@ -84,31 +87,19 @@ class CocoaNozzleOffsets:
             f"SET_GCODE_OFFSET Z_ADJUST={-self._current_offset}"
         )
         self._current_offset = 0.0
-        self._current_tool = None
 
     def get_status(self, _eventtime):
         gcode_offset = self.gcode_move.homing_position[2]
         return {
             "babystep": gcode_offset - self._current_offset,
             "current": self._current_offset,
-            "saved": {
-                k.removeprefix(self._prefix): v
-                for k, v in self.save_variables.allVariables.items()
-                if k.startswith(self._prefix)
-            },
+            "saved": self.save_variables.allVariables.get(
+                self._variable_name, 0.0
+            ),
         }
 
     def cmd_SET_NOZZLE_OFFSET(self, cmd: GCodeCommand):
-        uid = cmd.get("UID", "generic")
         offset = cmd.get_float("OFFSET", self.gcode_move.homing_position[2])
 
-        if uid == "current":
-            if self._current_tool is None:
-                raise cmd.error(
-                    "Unable to set offset for current tool when no tool is attached"
-                )
-            uid = self._current_tool
-
-        self.save_variables.save(f"{self._prefix}{uid}", round(offset, 4))
-        if self._current_tool == uid:
-            self._current_offset = offset
+        self.save_variables.save(f"{self._variable_name}", round(offset, 4))
+        self._current_offset = offset
