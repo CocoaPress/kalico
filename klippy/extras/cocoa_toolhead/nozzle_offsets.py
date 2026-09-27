@@ -64,7 +64,8 @@ class CocoaNozzleOffsets:
         probe_config = self.config.getsection("probe")
 
         if (z_offset := probe_config.getfloat("z_offset")) != 0.0:
-            self.save_variables.save(f"{self._prefix}generic", z_offset)
+            # A probe z_offset of N is equivalent to a gcode z offset of -N
+            self.save_variables.save(f"{self._prefix}generic", -z_offset)
             probe.mcu_probe.position_endstop = 0.0
             pconfig.set("probe", "z_offset", "0.0")
             self.gcode.run_script_from_command("SAVE_CONFIG RELOAD=0")
