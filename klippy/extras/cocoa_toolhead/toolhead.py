@@ -72,6 +72,7 @@ class CocoaToolheadControl:
         self.nozzle_offsets = CocoaNozzleOffsets(self, config)
 
         self.attached = None
+        self.active = None
         self.last_readings = {}
         self.calibration_required = False
 
@@ -104,15 +105,24 @@ class CocoaToolheadControl:
         )
         self.attach_tmpl = gcode_macro.load_template(config, "attach_gcode", "")
         self.detach_tmpl = gcode_macro.load_template(config, "detach_gcode", "")
+        self.activate_tmpl = gcode_macro.load_template(
+            config, "activate_gcode", ""
+        )
+        self.deactivate_tmpl = gcode_macro.load_template(
+            config, "deactivate_gcode", ""
+        )
 
     def _on_connect(self):
-        self.logger.info("Initializing Cocoa Toolhead")
-
-        self.attached = None
-
+        toolhead: ToolHead = self.printer.lookup_object("toolhead")
         extruder: PrinterExtruder = self.printer.lookup_object(
             self.extruder_name
         )
+
+        self.logger.info("Initializing Cocoa Toolhead")
+
+        self.attached = None
+        self.active = toolhead.get_extruder() is extruder
+
         body_heater = self.printer.lookup_object(self.body_heater_name)
 
         self.logger.debug("Injecting adc callbacks")
@@ -190,9 +200,22 @@ class CocoaToolheadControl:
 
         self.last_readings[heater.name] = value
 
-        self.trigger_attach_event(
-            toolhead.get_extruder() is extruder and value < OPEN_ADC_VALUE
+        is_attached = all(
+            value < OPEN_ADC_VALUE for value in self.last_readings.values()
         )
+        if is_attached != self.attached:
+            if self.attached is not None:
+                self.gcode.respond_info(
+                    f"Cocoa Press: Toolhead {self.name} {'attached' if is_attached else 'detached'}"
+                )
+            self.attached = is_attached
+
+            if is_attached:
+                self.printer.send_event(f"cocoa_toolhead:{self.name}:attached")
+                self.attach_tmpl()
+            else:
+                self.printer.send_event(f"cocoa_toolhead:{self.name}:detached")
+                self.detach_tmpl()
 
     def _extruder_activated(self):
         toolhead: ToolHead = self.printer.lookup_object("toolhead")
@@ -200,37 +223,32 @@ class CocoaToolheadControl:
             self.extruder_name
         )
 
-        print(
-            f"cocoa_toolhead:{self.mux_name} extruder activated {toolhead.get_extruder().get_name()}"
-        )
+        is_active = toolhead.get_extruder() is extruder
+        if is_active != self.active:
+            if self.active is not None and is_active:
+                self.gcode.respond_info(
+                    f"Cocoa Press: Toolhead {self.name} activated"
+                )
+            self.active = is_active
 
-        self.trigger_attach_event(toolhead.get_extruder() is extruder)
-
-    def trigger_attach_event(self, is_attached: bool):
-        if is_attached == self.attached:
-            return
-
-        self.attached = is_attached
-
-        self.gcode.respond_info(
-            f"Cocoa Press: Toolhead {self.name} {'attached' if is_attached else 'detached'}"
-        )
-
-        if is_attached:
-            self.printer.send_event(f"cocoa_toolhead:{self.name}:attached")
-            self.attach_tmpl()
-        else:
-            self.printer.send_event(f"cocoa_toolhead:{self.name}:detached")
-            self.detach_tmpl()
+            if is_active:
+                self.printer.send_event(f"cocoa_toolhead:{self.name}:activate")
+                self.activate_tmpl()
+            else:
+                self.printer.send_event(
+                    f"cocoa_toolhead:{self.name}:deactivate"
+                )
+                self.deactivate_tmpl()
 
     def get_status(self, eventtime):
         return {
             **self.load_wizard.get_status(eventtime),
             "attached": self.attached,
-            "adc": self.last_readings,
+            "active": self.active,
+            # "adc": self.last_readings,
             "calibration_required": self.calibration_required,
             "runout": self.runout.get_status(eventtime),
-            "memory": self.memory.get_status(eventtime),
+            # "memory": self.memory.get_status(eventtime),
             "offsets": self.nozzle_offsets.get_status(eventtime),
             "preheater": self.preheater.get_status(eventtime),
         }
