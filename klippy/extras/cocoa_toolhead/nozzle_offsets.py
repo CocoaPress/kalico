@@ -1,24 +1,28 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import typing
 
-if TYPE_CHECKING:
+from ..offset_move_transform import GCodeOffsets
+
+if typing.TYPE_CHECKING:
     from ...configfile import ConfigWrapper, PrinterConfig
     from ...gcode import GCodeCommand, GCodeDispatch
     from ...printer import Printer
     from ..gcode_move import GCodeMove
+    from ..offset_move_transform import OffsetMoveTransform
     from ..probe import PrinterProbe
     from ..save_variables import SaveVariables
     from .toolhead import CocoaToolheadControl
 
 
-class CocoaNozzleOffsets:
+class CocoaNozzleOffsets(GCodeOffsets):
     cocoa_toolhead: CocoaToolheadControl
     printer: Printer
 
     gcode: GCodeDispatch
     gcode_move: GCodeMove
     save_variables: SaveVariables
+    move_transform: OffsetMoveTransform
 
     def __init__(
         self, cocoa_toolhead: CocoaToolheadControl, config: ConfigWrapper
@@ -34,9 +38,11 @@ class CocoaNozzleOffsets:
         self.gcode = self.printer.lookup_object("gcode")
         self.gcode_move = self.printer.lookup_object("gcode_move")
         self.save_variables = self.printer.load_object(config, "save_variables")
+        self.move_transform = self.printer.load_object(
+            config, "offset_move_transform"
+        )
 
         self._variable_name = f"z_offset_{self.name}"
-        self._current_tool = None
         self._current_offset = 0.0
 
         self.gcode.register_mux_command(
@@ -45,17 +51,12 @@ class CocoaNozzleOffsets:
             self.mux_name,
             self.cmd_SET_NOZZLE_OFFSET,
         )
-        self.printer.register_event_handler(
-            f"cocoa_toolhead:{self.name}:detached", self._on_detach
-        )
-        self.printer.register_event_handler(
-            f"cocoa_toolhead:{self.name}:attached", self._on_attach
-        )
 
         if self.mux_name is None:
             self.printer.register_event_handler(
                 "klippy:ready", self._on_ready_PROBE_OFFSET_HACK
             )
+            self.move_transform.set_offsets(self)
 
     def _on_ready_PROBE_OFFSET_HACK(self):
         pconfig: PrinterConfig = self.printer.lookup_object("configfile")
@@ -74,26 +75,11 @@ class CocoaNozzleOffsets:
         ):
             self.save_variables.save(self._variable_name, z_offset)
 
-    def _on_attach(self):
-        self._current_offset = self.save_variables.allVariables.get(
-            self._variable_name, 0.0
-        )
-        self.gcode.run_script_from_command(
-            f"SET_GCODE_OFFSET Z_ADJUST={self._current_offset}"
-        )
-
-    def _on_detach(self):
-        self.gcode.run_script_from_command(
-            f"SET_GCODE_OFFSET Z_ADJUST={-self._current_offset}"
-        )
-        self._current_offset = 0.0
-
     def get_status(self, _eventtime):
         gcode_offset = self.gcode_move.homing_position[2]
         return {
-            "babystep": gcode_offset - self._current_offset,
-            "current": self._current_offset,
-            "saved": self.save_variables.allVariables.get(
+            "offsets": self.get_gcode_offsets(),
+            "current": self.save_variables.allVariables.get(
                 self._variable_name, 0.0
             ),
         }
@@ -103,3 +89,11 @@ class CocoaNozzleOffsets:
 
         self.save_variables.save(f"{self._variable_name}", round(offset, 4))
         self._current_offset = offset
+
+    ## GCodeOffsets
+    def get_gcode_offsets(self):
+        return [
+            0.0,
+            0.0,
+            self.save_variables.allVariables.get(self._variable_name, 0.0),
+        ]

@@ -16,12 +16,13 @@ from .preheater import CocoaPreheater
 from .runout import CocoaRunout
 
 if TYPE_CHECKING:
-    from ...configfile import ConfigWrapper
-    from ...gcode import GCodeCommand, GCodeDispatch
-    from ...kinematics.extruder import PrinterExtruder
-    from ...mcu import MCU_adc
-    from ...printer import Printer
-    from ...toolhead import ToolHead
+    from klippy.configfile import ConfigWrapper
+    from klippy.gcode import GCodeCommand, GCodeDispatch
+    from klippy.kinematics.extruder import PrinterExtruder
+    from klippy.mcu import MCU_adc
+    from klippy.printer import Printer
+    from klippy.toolhead import ToolHead
+
     from ..adc_temperature import PrinterADCtoTemperature
     from ..gcode_macro import PrinterGCodeMacro
     from ..heaters import Heater
@@ -42,6 +43,9 @@ class CocoaToolheadControl:
     runout: CocoaRunout
     memory: CocoaMemory
     load_wizard: CocoaLoadWizard
+
+    extruder: PrinterExtruder
+    body_heater: Heater
 
     def __init__(self, config: ConfigWrapper):
         self.printer = config.get_printer()
@@ -77,9 +81,9 @@ class CocoaToolheadControl:
         self.calibration_required = False
 
         self.printer.register_event_handler("klippy:connect", self._on_connect)
-        self.printer.register_event_handler(
-            "extruder:activate_extruder", self._extruder_activated
-        )
+        # self.printer.register_event_handler(
+        #     "extruder:activate_extruder", self._extruder_activated
+        # )
 
         self.printer.register_event_handler(
             f"cocoa_preheater:{self.name}:start", self._preheater_started
@@ -114,24 +118,22 @@ class CocoaToolheadControl:
 
     def _on_connect(self):
         toolhead: ToolHead = self.printer.lookup_object("toolhead")
-        extruder: PrinterExtruder = self.printer.lookup_object(
-            self.extruder_name
-        )
+
+        self.extruder = self.printer.lookup_object(self.extruder_name)
+        self.body_heater = self.printer.lookup_object(self.body_heater_name)
 
         self.logger.info("Initializing Cocoa Toolhead")
 
         self.attached = None
-        self.active = toolhead.get_extruder() is extruder
-
-        body_heater = self.printer.lookup_object(self.body_heater_name)
+        self.active = toolhead.get_extruder() is self.extruder
 
         self.logger.debug("Injecting adc callbacks")
 
-        self.inject_adc_callback(extruder.heater)
-        self.inject_adc_callback(body_heater)
+        self.inject_adc_callback(self.extruder.heater)
+        self.inject_adc_callback(self.body_heater)
 
-        self.inject_temp_callback("extruder", extruder.heater)
-        self.inject_temp_callback("body", body_heater)
+        self.inject_temp_callback("extruder", self.extruder.heater)
+        self.inject_temp_callback("body", self.body_heater)
 
     def _preheater_started(self, profile):
         if not (self.memory.connected):
@@ -193,11 +195,6 @@ class CocoaToolheadControl:
         heater.set_temp = set_temp
 
     def receive_sensor_value(self, heater, value: float):
-        toolhead: ToolHead = self.printer.lookup_object("toolhead")
-        extruder: PrinterExtruder = self.printer.lookup_object(
-            self.extruder_name
-        )
-
         self.last_readings[heater.name] = value
 
         is_attached = all(
@@ -219,11 +216,8 @@ class CocoaToolheadControl:
 
     def _extruder_activated(self):
         toolhead: ToolHead = self.printer.lookup_object("toolhead")
-        extruder: PrinterExtruder = self.printer.lookup_object(
-            self.extruder_name
-        )
 
-        is_active = toolhead.get_extruder() is extruder
+        is_active = toolhead.get_extruder() is self.extruder
         if is_active != self.active:
             if self.active is not None and is_active:
                 self.gcode.respond_info(
@@ -239,6 +233,13 @@ class CocoaToolheadControl:
                     f"cocoa_toolhead:{self.name}:deactivate"
                 )
                 self.deactivate_tmpl()
+
+    def activate(self):
+        toolhead: ToolHead = self.printer.lookup_object("toolhead")
+
+        if toolhead.get_extruder() is not self.extruder:
+            toolhead.flush_step_generation()
+            toolhead.set_extruder(self.extruder, self.extruder.last_position)
 
     def get_status(self, eventtime):
         return {
