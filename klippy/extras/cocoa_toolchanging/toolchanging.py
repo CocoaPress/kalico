@@ -8,8 +8,6 @@ import typing
 
 from klippy.kinematics.extruder import DummyExtruder
 
-from ..offset_move_transform import OffsetMoveTransform
-
 if typing.TYPE_CHECKING:
     from klippy.configfile import ConfigWrapper
     from klippy.gcode import GCodeCommand, GCodeDispatch
@@ -29,11 +27,18 @@ class CocoaToolchanging:
     gcode_move: GCodeMove
     gcode_macro: PrinterGCodeMacro
     virtual_sdcard: VirtualSD
-    move_transform: OffsetMoveTransform
 
     tools: dict[int, CocoaToolheadControl]
+    active_tool: CocoaToolheadControl
 
     _templates: dict[str, Template]
+
+    _is_toolchanging: bool
+    _toolchange_count: int
+    _active_tool: int | None
+    _last_tool: int | None
+    _next_tool: int | None
+    _tool_names: dict[int, str]
 
     def __init__(self, config: ConfigWrapper):
         self.config = config
@@ -44,9 +49,7 @@ class CocoaToolchanging:
         self.gcode_macro = self.printer.load_object(config, "gcode_macro")
         self.virtual_sdcard = self.printer.load_object(config, "virtual_sdcard")
 
-        self.move_transform = self.printer.load_object(
-            config, "offset_move_transform"
-        )
+        self.printer.load_object(config, "tool_offsets")
 
         self.dummy_extruder = DummyExtruder(self.printer)
 
@@ -62,18 +65,22 @@ class CocoaToolchanging:
 
         self._enabled = True
 
-        # status flags
+        # status fields
         self._is_toolchanging = False
         self._active_tool = None
         self._last_tool = None
         self._next_tool = None
         self._toolchange_count = 0
+        self._tool_names = {}
 
         self.tools = {}
+        self.active_tool = None
+
         tool_names = config.getlist("tools")
         for tool_index, tool_name in enumerate(tool_names):
-            tool = self.printer.load_object(config, tool_name)
-            self.register_toolhead(tool_index, tool)
+            cocoa_toolhead = self.printer.load_object(config, tool_name)
+            self.tools[tool_index] = cocoa_toolhead
+            self._tool_names[tool_index] = tool_name
 
         # Setup gcode commands
         self.gcode.register_command(
@@ -93,25 +100,26 @@ class CocoaToolchanging:
 
         # Set the initial extruder to a dummy
         toolhead.set_extruder(self.dummy_extruder, 0.0)
-        self.move_transform.set_offsets(None)
 
     def _reset_print_stats(self):
         self._toolchange_count = 0
 
-    def register_toolhead(self, index: int, toolhead: CocoaToolheadControl):
-        self.tools[index] = toolhead
-        self._active_tool
-
     def deactivate_tool(self):
         toolhead: ToolHead = self.printer.lookup_object("toolhead")
 
+        if not self._active_tool:
+            return
+
+        self._last_tool = self._active_tool
         self._active_tool = None
-        self.move_transform.set_offsets(None)
+        self.active_tool = None
 
         current_extruder = toolhead.get_extruder()
         if not isinstance(current_extruder, DummyExtruder):
             toolhead.flush_step_generation()
             toolhead.set_extruder(self.dummy_extruder, 0.0)
+
+        self.printer.send_event("cocoa_toolchanging:tool_activated", None)
 
     def activate_tool(self, tool_index: int):
         toolhead: ToolHead = self.printer.lookup_object("toolhead")
@@ -122,8 +130,10 @@ class CocoaToolchanging:
             toolhead.flush_step_generation()
             toolhead.set_extruder(tool.extruder, tool.extruder.last_position)
 
-        self.move_transform.set_offsets(tool.nozzle_offsets)
+        self.active_tool = tool
         self._active_tool = tool_index
+
+        self.printer.send_event("cocoa_toolchanging:tool_activated", tool)
 
     def get_status(self, _eventtime=None):
         return {
@@ -133,6 +143,7 @@ class CocoaToolchanging:
             "next_tool": self._next_tool,
             "last_tool": self._last_tool,
             "toolchange_count": self._toolchange_count,
+            "tools": self._tool_names,
         }
 
     def _call_template(self, name, *, gcmd: GCodeCommand = None):
@@ -176,7 +187,6 @@ class CocoaToolchanging:
         self._next_tool = next_tool
 
         self.deactivate_tool()
-        self._active_tool = None
 
         self._call_template("after_change_tool", gcmd=gcmd)
 
@@ -216,9 +226,8 @@ class CocoaToolchanging:
             return
 
         self.deactivate_tool()
-        self._last_tool = self._active_tool
+
         self._next_tool = None
-        self._active_tool = None
         self._is_toolchanging = False
 
     def cmd_SET_TOOLCHANGING_ENABLED(self, gcmd: GCodeCommand):

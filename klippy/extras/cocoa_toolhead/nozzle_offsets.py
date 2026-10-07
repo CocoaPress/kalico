@@ -9,7 +9,6 @@ if typing.TYPE_CHECKING:
     from ...gcode import GCodeCommand, GCodeDispatch
     from ...printer import Printer
     from ..gcode_move import GCodeMove
-    from ..offset_move_transform import OffsetMoveTransform
     from ..probe import PrinterProbe
     from ..save_variables import SaveVariables
     from .toolhead import CocoaToolheadControl
@@ -22,7 +21,6 @@ class CocoaNozzleOffsets(GCodeOffsets):
     gcode: GCodeDispatch
     gcode_move: GCodeMove
     save_variables: SaveVariables
-    move_transform: OffsetMoveTransform
 
     def __init__(
         self, cocoa_toolhead: CocoaToolheadControl, config: ConfigWrapper
@@ -38,9 +36,8 @@ class CocoaNozzleOffsets(GCodeOffsets):
         self.gcode = self.printer.lookup_object("gcode")
         self.gcode_move = self.printer.lookup_object("gcode_move")
         self.save_variables = self.printer.load_object(config, "save_variables")
-        self.move_transform = self.printer.load_object(
-            config, "offset_move_transform"
-        )
+
+        self.printer.load_object(config, "tool_offsets")
 
         self._variable_name = f"z_offset_{self.name}"
         self._current_offset = 0.0
@@ -56,7 +53,6 @@ class CocoaNozzleOffsets(GCodeOffsets):
             self.printer.register_event_handler(
                 "klippy:ready", self._on_ready_PROBE_OFFSET_HACK
             )
-            self.move_transform.set_offsets(self)
 
     def _on_ready_PROBE_OFFSET_HACK(self):
         pconfig: PrinterConfig = self.printer.lookup_object("configfile")
@@ -75,8 +71,13 @@ class CocoaNozzleOffsets(GCodeOffsets):
         ):
             self.save_variables.save(self._variable_name, z_offset)
 
+    def cmd_SET_NOZZLE_OFFSET(self, cmd: GCodeCommand):
+        offset = cmd.get_float("OFFSET", self.gcode_move.homing_position[2])
+
+        self.save_variables.save(f"{self._variable_name}", round(offset, 4))
+        self._current_offset = offset
+
     def get_status(self, _eventtime):
-        gcode_offset = self.gcode_move.homing_position[2]
         return {
             "offsets": self.get_gcode_offsets(),
             "current": self.save_variables.allVariables.get(
@@ -84,11 +85,8 @@ class CocoaNozzleOffsets(GCodeOffsets):
             ),
         }
 
-    def cmd_SET_NOZZLE_OFFSET(self, cmd: GCodeCommand):
-        offset = cmd.get_float("OFFSET", self.gcode_move.homing_position[2])
-
-        self.save_variables.save(f"{self._variable_name}", round(offset, 4))
-        self._current_offset = offset
+    def save_offsets(self, offsets: tuple[float, float, float]):
+        self.save_variables.save(self._variable_name, round(offsets[2], 4))
 
     ## GCodeOffsets
     def get_gcode_offsets(self):
