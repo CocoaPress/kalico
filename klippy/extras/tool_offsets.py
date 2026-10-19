@@ -60,8 +60,8 @@ class ToolOffsetProxy:
             self._tool_activated(cocoa_toolchanging.active_tool)
 
         # Single tool machines always activate the first toolhead found
-        elif toolheads := self.printer.lookup_object("cocoa_toolhead"):
-            _, cocoa_toolhead = next(toolheads)
+        elif toolheads := self.printer.lookup_objects("cocoa_toolhead"):
+            cocoa_toolhead = toolheads[0][1]
             self._tool_activated(cocoa_toolhead)
 
     def _tool_activated(self, tool: None | CocoaToolheadControl):
