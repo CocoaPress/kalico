@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import typing
+import math
 
 from klippy.extras import manual_probe
 
@@ -10,6 +11,8 @@ if typing.TYPE_CHECKING:
     from klippy.configfile import ConfigWrapper
     from klippy.gcode import GCodeCommand, GCodeDispatch
     from klippy.printer import Printer
+    from klippy.toolhead import ToolHead
+    from klippy.extras.probe import PrinterProbe
 
     from .cocoa_toolhead.toolhead import CocoaToolheadControl
     from .cocoa_toolhead.nozzle_offsets import CocoaNozzleOffsets
@@ -91,11 +94,29 @@ class ToolOffsetProxy:
         Calibrate Z offset for the currently active tool
         """
 
+        manual_probe.verify_no_manual_probe(self.printer)
+
+        toolhead: ToolHead = self.printer.lookup_object("toolhead")
+        probe: PrinterProbe = self.printer.lookup_object("probe")
+
         if self.active_offsets is None:
             raise gcmd.error(
                 "Unable to calibrate tool offsets without active tool"
             )
 
+        # Probe at the current location
+        pos = probe.run_probe(gcmd)
+
+        # Lift 5mm
+        pos[2] = math.floor(pos[2] + 5.0)
+        toolhead.manual_move(pos, probe.get_lift_speed(gcmd))
+
+        # Move nozzle over the probed position
+        pos[0] += probe.x_offset
+        pos[1] += probe.y_offset
+        toolhead.manual_move(pos, probe.speed)
+
+        # Start calibration
         manual_probe.ManualProbeHelper(
             self.printer,
             gcmd,
