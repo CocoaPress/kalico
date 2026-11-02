@@ -92,7 +92,7 @@ class CocoaToolchanging:
 
         # Clear toolchange count on print stat reset
         self.printer.register_event_handler(
-            "print_status:reset", self._reset_print_stats
+            "print_stats:reset", self._reset_print_stats
         )
 
     def _on_connect(self):
