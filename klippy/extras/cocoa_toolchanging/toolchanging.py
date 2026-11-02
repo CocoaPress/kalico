@@ -107,7 +107,7 @@ class CocoaToolchanging:
     def deactivate_tool(self):
         toolhead: ToolHead = self.printer.lookup_object("toolhead")
 
-        if not self._active_tool:
+        if self._active_tool is None:
             return
 
         self._last_tool = self._active_tool
@@ -221,7 +221,7 @@ class CocoaToolchanging:
         Deactivate the current active tool
         """
 
-        if not self._active_tool:
+        if self._active_tool is None:
             _gcmd.respond_info("No current tool to deactivate")
             return
 
